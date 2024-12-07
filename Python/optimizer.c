@@ -691,11 +691,11 @@ top:  // Jump here after _PUSH_FRAME or likely branches
                 else {
                     confidence = confidence * (18 - bitcount) / 20;
                 }
-                uint32_t uopcode = BRANCH_TO_GUARD[opcode - POP_JUMP_IF_FALSE][jump_likely];
+                uint32_t uopcode = BRANCH_TO_GUARD[opcode - POP_JUMP_IF_FALSE][jump_likely]; // guard condition
                 DPRINTF(2, "%d: %s(%d): counter=%04x, bitcount=%d, likely=%d, confidence=%d, uopcode=%s\n",
                         target, _PyOpcode_OpName[opcode], oparg,
                         counter, bitcount, jump_likely, confidence, _PyUOpName(uopcode));
-                if (confidence < CONFIDENCE_CUTOFF) { // 执行度小于阈值则停止追踪
+                if (confidence < CONFIDENCE_CUTOFF) { // 置信度小于阈值则停止追踪
                     DPRINTF(2, "Confidence too low (%d < %d)\n", confidence, CONFIDENCE_CUTOFF);
                     OPT_STAT_INC(low_confidence);
                     goto done;
@@ -1164,7 +1164,7 @@ static _PyExecutorObject *
 make_executor_from_uops(_PyUOpInstruction *buffer, int length, const _PyBloomFilter *dependencies)
 {
     int exit_count = count_exits(buffer, length); // 统计退出指令的数量
-    _PyExecutorObject *executor = allocate_executor(exit_count, length); // 分配一个执行器对象
+    _PyExecutorObject *executor = allocate_executor(exit_count, length); // 分配一个执行器对象，其中字段trace指向一个length长度的空间
     if (executor == NULL) {
         return NULL;
     }
@@ -1175,7 +1175,7 @@ make_executor_from_uops(_PyUOpInstruction *buffer, int length, const _PyBloomFil
         executor->exits[i].executor = &COLD_EXITS[i];
         executor->exits[i].temperature = initial_temperature_backoff_counter();
     }
-    // 将指令复制到executor的执行缓冲区中
+    // 将指令复制到executor的执行缓冲区中（由trace指向）
     int next_exit = exit_count-1;
     _PyUOpInstruction *dest = (_PyUOpInstruction *)&executor->trace[length];
     assert(buffer[0].opcode == _START_EXECUTOR);

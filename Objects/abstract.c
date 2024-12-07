@@ -2568,14 +2568,14 @@ abstract_get_bases(PyObject *cls)
 
 
 static int
-abstract_issubclass(PyObject *derived, PyObject *cls)
+abstract_issubclass(PyObject *derived, PyObject *cls) // abstract_issubclass是一个用于判断一个类型derived是否是另一个类型cls的子类的函数。它处理了不同的情况，包括类型检查、类型子类关系、以及通过__bases__属性进行继承关系检查
 {
     PyObject *bases = NULL;
     Py_ssize_t i, n;
     int r = 0;
 
     while (1) {
-        if (derived == cls) {
+        if (derived == cls) { // 如果derived和cls是同一个类型，则返回1
             Py_XDECREF(bases); /* See below comment */
             return 1;
         }
@@ -2584,19 +2584,19 @@ abstract_issubclass(PyObject *derived, PyObject *cls)
            XSETREF is used instead of SETREF, because bases is NULL on the
            first iteration of the loop.
         */
-        Py_XSETREF(bases, abstract_get_bases(derived));
-        if (bases == NULL) {
+        Py_XSETREF(bases, abstract_get_bases(derived)); // 获取derived的基类
+        if (bases == NULL) { // 如果获取基类失败，则返回-1
             if (PyErr_Occurred())
                 return -1;
             return 0;
         }
-        n = PyTuple_GET_SIZE(bases);
+        n = PyTuple_GET_SIZE(bases); // 获取基类的数量
         if (n == 0) {
             Py_DECREF(bases);
             return 0;
         }
         /* Avoid recursivity in the single inheritance case */
-        if (n == 1) {
+        if (n == 1) { // 如果基类只有一个，则将derived设置为基类，继续循环
             derived = PyTuple_GET_ITEM(bases, 0);
             continue;
         }
@@ -2607,9 +2607,9 @@ abstract_issubclass(PyObject *derived, PyObject *cls)
         Py_DECREF(bases);
         return -1;
     }
-    for (i = 0; i < n; i++) {
+    for (i = 0; i < n; i++) { // 逐一检查derived的基类是否是cls的子类
         r = abstract_issubclass(PyTuple_GET_ITEM(bases, i), cls);
-        if (r != 0) {
+        if (r != 0) { // 如果是子类，则返回1
             break;
         }
     }
@@ -2636,15 +2636,16 @@ check_class(PyObject *cls, const char *error)
 
 static int
 object_isinstance(PyObject *inst, PyObject *cls)
-{
+{ // object_isinstance是一个用于判断对象inst是否是指定类型cls的实例的函数。它处理了不同的情况，包括类型检查、类型子类关系、以及通过__class__属性进行继承关系检查
     PyObject *icls;
     int retval;
     if (PyType_Check(cls)) {
-        retval = PyObject_TypeCheck(inst, (PyTypeObject *)cls);
+        // cls是一个类型对象，函数检查inst是否是cls的实例，若不是，则检查inst.__class__是否为cls的子类
+        retval = PyObject_TypeCheck(inst, (PyTypeObject *)cls); // 使用PyObject_TypeCheck函数来判断inst是否是cls的实例
         if (retval == 0) {
-            retval = PyObject_GetOptionalAttr(inst, &_Py_ID(__class__), &icls);
+            retval = PyObject_GetOptionalAttr(inst, &_Py_ID(__class__), &icls); // 尝试从inst中获取__class__属性。__class__是一个指向inst类的指针，如果inst定义了__class__，则返回该值。icls是inst的类
             if (icls != NULL) {
-                if (icls != (PyObject *)(Py_TYPE(inst)) && PyType_Check(icls)) {
+                if (icls != (PyObject *)(Py_TYPE(inst)) && PyType_Check(icls)) { // 如果__class__属性存在，且icls和inst的类型不一样，且icls是类型对象，则检查icls是否是cls的子类型，使用PyType_IsSubtype
                     retval = PyType_IsSubtype(
                         (PyTypeObject *)icls,
                         (PyTypeObject *)cls);
@@ -2656,13 +2657,13 @@ object_isinstance(PyObject *inst, PyObject *cls)
             }
         }
     }
-    else {
+    else { // 不是类型对象（例如元组，联合类型等），则调用abstract_issubclass函数来检查inst是否是cls的子类
         if (!check_class(cls,
             "isinstance() arg 2 must be a type, a tuple of types, or a union"))
             return -1;
-        retval = PyObject_GetOptionalAttr(inst, &_Py_ID(__class__), &icls);
+        retval = PyObject_GetOptionalAttr(inst, &_Py_ID(__class__), &icls); // 尝试获取inst的__class__属性
         if (icls != NULL) {
-            retval = abstract_issubclass(icls, cls);
+            retval = abstract_issubclass(icls, cls); // 如果inst定义了__class__，则调用abstract_issubclass来检查inst.__class__是否是cls的子类。如果是子类，则返回1，否则返回0
             Py_DECREF(icls);
         }
     }
@@ -2672,22 +2673,22 @@ object_isinstance(PyObject *inst, PyObject *cls)
 
 static int
 object_recursive_isinstance(PyThreadState *tstate, PyObject *inst, PyObject *cls)
-{
+{ // 这个函数object_recursive_isinstance的作用是递归地判断一个对象inst是否是指定类型或类型元组cls的实例。它在CPython的isinstance实现中用于处理一些复杂的情况，比如__instancecheck__的自定义逻辑、类型联合（_PyUnion）、元组类型检查等
     /* Quick test for an exact match */
     if (Py_IS_TYPE(inst, (PyTypeObject *)cls)) {
         return 1;
     }
 
     /* We know what type's __instancecheck__ does. */
-    if (PyType_CheckExact(cls)) {
+    if (PyType_CheckExact(cls)) { // 具体类型的检查
         return object_isinstance(inst, cls);
     }
 
-    if (_PyUnion_Check(cls)) {
-        cls = _Py_union_args(cls);
+    if (_PyUnion_Check(cls)) { // 类型联合的检查
+        cls = _Py_union_args(cls); // 联合类型允许检查一个对象是否属于多个类型之一，因此需要递归处理每个联合类型的成员
     }
 
-    if (PyTuple_Check(cls)) {
+    if (PyTuple_Check(cls)) { // 类型元组的检查
         /* Not a general sequence -- that opens up the road to
            recursion and stack overflow. */
         if (_Py_EnterRecursiveCallTstate(tstate, " in __instancecheck__")) {
@@ -2695,7 +2696,7 @@ object_recursive_isinstance(PyThreadState *tstate, PyObject *inst, PyObject *cls
         }
         Py_ssize_t n = PyTuple_GET_SIZE(cls);
         int r = 0;
-        for (Py_ssize_t i = 0; i < n; ++i) {
+        for (Py_ssize_t i = 0; i < n; ++i) { // 逐一递归检查元组中的每个元素
             PyObject *item = PyTuple_GET_ITEM(cls, i);
             r = object_recursive_isinstance(tstate, inst, item);
             if (r != 0) {
@@ -2707,9 +2708,9 @@ object_recursive_isinstance(PyThreadState *tstate, PyObject *inst, PyObject *cls
         return r;
     }
 
-    PyObject *checker = _PyObject_LookupSpecial(cls, &_Py_ID(__instancecheck__));
+    PyObject *checker = _PyObject_LookupSpecial(cls, &_Py_ID(__instancecheck__)); // 如果cls有自定义__instancecheck__方法，那么调用这个方法来判断inst是否是cls的实例
     if (checker != NULL) {
-        if (_Py_EnterRecursiveCallTstate(tstate, " in __instancecheck__")) {
+        if (_Py_EnterRecursiveCallTstate(tstate, " in __instancecheck__")) { // 使用了递归调用深度控制（_Py_EnterRecursiveCallTstate和_Py_LeaveRecursiveCallTstate），避免由于__instancecheck__方法的递归调用导致的栈溢出
             Py_DECREF(checker);
             return -1;
         }
@@ -2726,12 +2727,12 @@ object_recursive_isinstance(PyThreadState *tstate, PyObject *inst, PyObject *cls
 
         return ok;
     }
-    else if (_PyErr_Occurred(tstate)) {
+    else if (_PyErr_Occurred(tstate)) { // 如果在查找__instancecheck__方法的过程中发生了异常，那么返回-1
         return -1;
     }
 
     /* cls has no __instancecheck__() method */
-    return object_isinstance(inst, cls);
+    return object_isinstance(inst, cls); // 如果cls没有__instancecheck__方法，那么调用object_isinstance函数来判断inst是否是cls的实例
 }
 
 

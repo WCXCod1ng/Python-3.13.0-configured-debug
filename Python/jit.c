@@ -424,7 +424,7 @@ _PyJIT_Compile(_PyExecutorObject *executor, const _PyUOpInstruction trace[], siz
     for (size_t i = 0; i < length; i++) {
         const _PyUOpInstruction *instruction = &trace[i];
         group = &stencil_groups[instruction->opcode];
-        instruction_starts[i] = code_size;
+        instruction_starts[i] = code_size; // 存储每个指令的起始地址
         code_size += group->code_size;
         data_size += group->data_size;
     }

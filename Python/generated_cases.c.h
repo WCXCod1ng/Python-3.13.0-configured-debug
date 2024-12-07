@@ -117,7 +117,7 @@
                 #if ENABLE_SPECIALIZATION
                 if (ADAPTIVE_COUNTER_TRIGGERS(counter)) {
                     next_instr = this_instr;
-                    _Py_Specialize_BinaryOp(lhs, rhs, next_instr, oparg, LOCALS_ARRAY);
+                    _Py_Specialize_BinaryOp(lhs, rhs, next_instr, oparg, LOCALS_ARRAY); // 满足条件则进行特化
                     DISPATCH_SAME_OPARG();
                 }
                 STAT_INC(BINARY_OP, deferred);
@@ -129,7 +129,7 @@
             // _BINARY_OP
             {
                 assert(_PyEval_BinaryOps[oparg]);
-                res = _PyEval_BinaryOps[oparg](lhs, rhs);
+                res = _PyEval_BinaryOps[oparg](lhs, rhs); // 在ceval.c中定义了const binaryfunc _PyEval_BinaryOps[]类型，以操作数为索引，每个元素都是一个func
                 Py_DECREF(lhs);
                 Py_DECREF(rhs);
                 if (res == NULL) goto pop_2_error;
@@ -139,7 +139,7 @@
             DISPATCH();
         }
 
-        TARGET(BINARY_OP_ADD_FLOAT) {
+        TARGET(BINARY_OP_ADD_FLOAT) { // BinaryOp的float类型add操作的特化指令
             frame->instr_ptr = next_instr;
             next_instr += 2;
             INSTRUCTION_STATS(BINARY_OP_ADD_FLOAT);
@@ -152,7 +152,7 @@
             left = stack_pointer[-2];
             {
                 DEOPT_IF(!PyFloat_CheckExact(left), BINARY_OP);
-                DEOPT_IF(!PyFloat_CheckExact(right), BINARY_OP);
+                DEOPT_IF(!PyFloat_CheckExact(right), BINARY_OP); // 去优化
             }
             /* Skip 1 cache entry */
             // _BINARY_OP_ADD_FLOAT
@@ -216,7 +216,7 @@
             // _BINARY_OP_ADD_UNICODE
             {
                 STAT_INC(BINARY_OP, hit);
-                res = PyUnicode_Concat(left, right);
+                res = PyUnicode_Concat(left, right); // unicode的add操作实际是concat操作
                 _Py_DECREF_SPECIALIZED(left, _PyUnicode_ExactDealloc);
                 _Py_DECREF_SPECIALIZED(right, _PyUnicode_ExactDealloc);
                 if (res == NULL) goto pop_2_error;
@@ -245,7 +245,7 @@
             {
                 assert(next_instr->op.code == STORE_FAST);
                 PyObject **target_local = &GETLOCAL(next_instr->op.arg);
-                DEOPT_IF(*target_local != left, BINARY_OP);
+                DEOPT_IF(*target_local != left, BINARY_OP); // 去优化
                 STAT_INC(BINARY_OP, hit);
                 /* Handle `left = left + right` or `left += right` for str.
                  *
@@ -260,7 +260,7 @@
                  */
                 assert(Py_REFCNT(left) >= 2);
                 _Py_DECREF_NO_DEALLOC(left);
-                PyUnicode_Append(target_local, right);
+                PyUnicode_Append(target_local, right); // 原地的unicode的add操作实际上是append操作
                 _Py_DECREF_SPECIALIZED(right, _PyUnicode_ExactDealloc);
                 if (*target_local == NULL) goto pop_2_error;
                 // The STORE_FAST is already done.
@@ -415,7 +415,7 @@
             DISPATCH();
         }
 
-        TARGET(BINARY_SUBSCR) {
+        TARGET(BINARY_SUBSCR) { // 索引操作
             frame->instr_ptr = next_instr;
             next_instr += 2;
             INSTRUCTION_STATS(BINARY_SUBSCR);
@@ -466,7 +466,7 @@
             dict = stack_pointer[-2];
             DEOPT_IF(!PyDict_CheckExact(dict), BINARY_SUBSCR);
             STAT_INC(BINARY_SUBSCR, hit);
-            int rc = PyDict_GetItemRef(dict, sub, &res);
+            int rc = PyDict_GetItemRef(dict, sub, &res); // 实际的索引操作
             if (rc == 0) {
                 _PyErr_SetKeyError(sub);
             }
@@ -479,7 +479,7 @@
             DISPATCH();
         }
 
-        TARGET(BINARY_SUBSCR_GETITEM) {
+        TARGET(BINARY_SUBSCR_GETITEM) { // 针对于对象获取元素操作的优化：obj[key]
             _Py_CODEUNIT *this_instr = frame->instr_ptr = next_instr;
             next_instr += 2;
             INSTRUCTION_STATS(BINARY_SUBSCR_GETITEM);
@@ -489,27 +489,27 @@
             /* Skip 1 cache entry */
             sub = stack_pointer[-1];
             container = stack_pointer[-2];
-            DEOPT_IF(tstate->interp->eval_frame, BINARY_SUBSCR);
+            DEOPT_IF(tstate->interp->eval_frame, BINARY_SUBSCR); // 如果当前是正在执行的解释器帧，意味着当前是解释器模式，而不是优化模式，跳过特化指令，回退到普通处理
             PyTypeObject *tp = Py_TYPE(container);
-            DEOPT_IF(!PyType_HasFeature(tp, Py_TPFLAGS_HEAPTYPE), BINARY_SUBSCR);
+            DEOPT_IF(!PyType_HasFeature(tp, Py_TPFLAGS_HEAPTYPE), BINARY_SUBSCR); // 检查容器对象的类型是否是堆类型（Py_TPFLAGS_HEAPTYPE），即是否是用户定义的类型。如果不是，跳过特化指令
             PyHeapTypeObject *ht = (PyHeapTypeObject *)tp;
             PyObject *cached = ht->_spec_cache.getitem;
-            DEOPT_IF(cached == NULL, BINARY_SUBSCR);
+            DEOPT_IF(cached == NULL, BINARY_SUBSCR); // 检查容器类型 ht 是否存在缓存的 getitem 函数（通常是某种类型的优化函数），如果没有，跳过特化指令
             assert(PyFunction_Check(cached));
             PyFunctionObject *getitem = (PyFunctionObject *)cached;
             uint32_t cached_version = ht->_spec_cache.getitem_version;
-            DEOPT_IF(getitem->func_version != cached_version, BINARY_SUBSCR);
-            PyCodeObject *code = (PyCodeObject *)getitem->func_code;
+            DEOPT_IF(getitem->func_version != cached_version, BINARY_SUBSCR); // 检查缓存的 getitem 函数版本与当前版本是否一致。如果版本不一致，说明函数已经发生变化，跳过优化，回退到通用 BINARY_SUBSCR 处理。
+            PyCodeObject *code = (PyCodeObject *)getitem->func_code; // 获取 getitem 函数的字节码对象，字节码对象包含了该函数的实际代码
             assert(code->co_argcount == 2);
-            DEOPT_IF(!_PyThreadState_HasStackSpace(tstate, code->co_framesize), BINARY_SUBSCR);
+            DEOPT_IF(!_PyThreadState_HasStackSpace(tstate, code->co_framesize), BINARY_SUBSCR); // 检查当前线程是否有足够的栈空间来执行这个 getitem 函数。如果没有足够的栈空间，跳过优化
             STAT_INC(BINARY_SUBSCR, hit);
             Py_INCREF(getitem);
-            _PyInterpreterFrame *new_frame = _PyFrame_PushUnchecked(tstate, getitem, 2);
-            STACK_SHRINK(2);
+            _PyInterpreterFrame *new_frame = _PyFrame_PushUnchecked(tstate, getitem, 2); // 创建一个新的执行帧，准备执行 getitem 函数。这个新帧的参数是 container 和 sub，它们被传递给 getitem 函数
+            STACK_SHRINK(2); // 从栈中移除已使用的两个操作数（container 和 sub），为新的执行帧腾出空间
             new_frame->localsplus[0] = container;
             new_frame->localsplus[1] = sub;
-            frame->return_offset = (uint16_t)(next_instr - this_instr);
-            DISPATCH_INLINED(new_frame);
+            frame->return_offset = (uint16_t)(next_instr - this_instr); // 设置返回偏移量，这样当 getitem 函数执行完毕时，能够正确地返回到后续指令
+            DISPATCH_INLINED(new_frame); // 跳转到新的执行帧，执行 getitem 函数
         }
 
         TARGET(BINARY_SUBSCR_LIST_INT) {
@@ -530,7 +530,7 @@
             Py_ssize_t index = ((PyLongObject*)sub)->long_value.ob_digit[0];
             DEOPT_IF(index >= PyList_GET_SIZE(list), BINARY_SUBSCR);
             STAT_INC(BINARY_SUBSCR, hit);
-            res = PyList_GET_ITEM(list, index);
+            res = PyList_GET_ITEM(list, index); // 实际调用listobject.h中定义的宏进行索引操作
             assert(res != NULL);
             Py_INCREF(res);
             _Py_DECREF_SPECIALIZED(sub, (destructor)PyObject_Free);
@@ -774,14 +774,14 @@
             {
                 // oparg counts all of the args, but *not* self:
                 int total_args = oparg;
-                if (self_or_null != NULL) {
-                    args--;
+                if (self_or_null != NULL) { // 包含self变量
+                    args--; // 参数指针前移，移动到self变量处
                     total_args++;
                 }
-                else if (Py_TYPE(callable) == &PyMethod_Type) {
+                else if (Py_TYPE(callable) == &PyMethod_Type) { // 调用的是函数的方法
                     args--;
                     total_args++;
-                    PyObject *self = ((PyMethodObject *)callable)->im_self;
+                    PyObject *self = ((PyMethodObject *)callable)->im_self; // classobject.h中定义PyMethodObject
                     args[0] = Py_NewRef(self);
                     PyObject *method = ((PyMethodObject *)callable)->im_func;
                     args[-1] = Py_NewRef(method);
@@ -798,7 +798,7 @@
                     _PyInterpreterFrame *new_frame = _PyEvalFramePushAndInit(
                         tstate, (PyFunctionObject *)callable, locals,
                         args, total_args, NULL
-                    );
+                    ); // 创建新的解释器栈帧
                     // Manipulate stack directly since we leave using DISPATCH_INLINED().
                     STACK_SHRINK(oparg + 2);
                     // The frame has stolen all the arguments from the stack,
@@ -807,14 +807,14 @@
                         goto error;
                     }
                     frame->return_offset = (uint16_t)(next_instr - this_instr);
-                    DISPATCH_INLINED(new_frame);
+                    DISPATCH_INLINED(new_frame); // 跳转到新帧处执行
                 }
                 /* Callable is not a normal Python function */
                 res = PyObject_Vectorcall(
                                       callable, args,
                                       total_args | PY_VECTORCALL_ARGUMENTS_OFFSET,
-                                      NULL);
-                if (opcode == INSTRUMENTED_CALL) {
+                                      NULL); // 不是普通Python函数时，todo 使用PyObject_Vectorcall处理调用
+                if (opcode == INSTRUMENTED_CALL) { // 关于调试与监控的逻辑
                     PyObject *arg = total_args == 0 ?
                     &_PyInstrumentation_MISSING : args[0];
                     if (res == NULL) {
@@ -834,7 +834,7 @@
                 assert((res != NULL) ^ (_PyErr_Occurred(tstate) != NULL));
                 Py_DECREF(callable);
                 for (int i = 0; i < total_args; i++) {
-                    Py_DECREF(args[i]);
+                    Py_DECREF(args[i]); // 参数清理
                 }
                 if (res == NULL) { stack_pointer += -2 - oparg; goto error; }
             }
@@ -847,7 +847,7 @@
             DISPATCH();
         }
 
-        TARGET(CALL_ALLOC_AND_ENTER_INIT) {
+        TARGET(CALL_ALLOC_AND_ENTER_INIT) { // 优化类对象的初始化过程
             _Py_CODEUNIT *this_instr = frame->instr_ptr = next_instr;
             next_instr += 4;
             INSTRUCTION_STATS(CALL_ALLOC_AND_ENTER_INIT);
@@ -858,7 +858,7 @@
             /* Skip 1 cache entry */
             /* Skip 2 cache entries */
             args = &stack_pointer[-oparg];
-            null = stack_pointer[-1 - oparg];
+            null = stack_pointer[-1 - oparg]; // slef==null
             callable = stack_pointer[-2 - oparg];
             /* This instruction does the following:
              * 1. Creates the object (by calling ``object.__new__``)
@@ -866,28 +866,29 @@
              * 3. Pushes the frame for ``__init__`` to the frame stack
              * */
             _PyCallCache *cache = (_PyCallCache *)&this_instr[1];
+            // null==NULL, callable是一个class, 类版本标签与缓存匹配。以上不满足则去优化
             DEOPT_IF(null != NULL, CALL);
             DEOPT_IF(!PyType_Check(callable), CALL);
             PyTypeObject *tp = (PyTypeObject *)callable;
             DEOPT_IF(tp->tp_version_tag != read_u32(cache->func_version), CALL);
             assert(tp->tp_flags & Py_TPFLAGS_INLINE_VALUES);
-            PyHeapTypeObject *cls = (PyHeapTypeObject *)callable;
-            PyFunctionObject *init = (PyFunctionObject *)cls->_spec_cache.init;
-            PyCodeObject *code = (PyCodeObject *)init->func_code;
+            PyHeapTypeObject *cls = (PyHeapTypeObject *)callable; // 将来要new的对象
+            PyFunctionObject *init = (PyFunctionObject *)cls->_spec_cache.init; // __init__
+            PyCodeObject *code = (PyCodeObject *)init->func_code; // __init__对应的字节码
             DEOPT_IF(code->co_argcount != oparg+1, CALL);
             DEOPT_IF((code->co_flags & (CO_VARKEYWORDS | CO_VARARGS | CO_OPTIMIZED)) != CO_OPTIMIZED, CALL);
             DEOPT_IF(code->co_kwonlyargcount, CALL);
             DEOPT_IF(!_PyThreadState_HasStackSpace(tstate, code->co_framesize + _Py_InitCleanup.co_framesize), CALL);
             STAT_INC(CALL, hit);
-            PyObject *self = _PyType_NewManagedObject(tp);
+            PyObject *self = _PyType_NewManagedObject(tp); // 创建对象
             if (self == NULL) {
                 goto error;
             }
             Py_DECREF(tp);
             _PyInterpreterFrame *shim = _PyFrame_PushTrampolineUnchecked(
-                tstate, (PyCodeObject *)&_Py_InitCleanup, 1);
+                tstate, (PyCodeObject *)&_Py_InitCleanup, 1); // push一个 "shim"（临时）帧，用于在执行 __init__ 方法后进行清理
             assert(_PyCode_CODE((PyCodeObject *)shim->f_executable)[0].op.code == EXIT_INIT_CHECK);
-            /* Push self onto stack of shim */
+            /* Push self onto stack of shim */ // push一个帧用于处理__init__的逻辑
             Py_INCREF(self);
             shim->localsplus[0] = self;
             Py_INCREF(init);
@@ -897,13 +898,13 @@
             for (int i = 0; i < oparg; i++) {
                 init_frame->localsplus[i+1] = args[i];
             }
-            frame->return_offset = (uint16_t)(next_instr - this_instr);
+            frame->return_offset = (uint16_t)(next_instr - this_instr); // 设置帧的返回偏移量
             STACK_SHRINK(oparg+2);
             _PyFrame_SetStackPointer(frame, stack_pointer);
             /* Link frames */
             init_frame->previous = shim;
             shim->previous = frame;
-            frame = tstate->current_frame = init_frame;
+            frame = tstate->current_frame = init_frame; // 当前帧为执行__init__方法的帧
             CALL_STAT_INC(inlined_py_calls);
             /* Account for pushing the extra frame.
              * We don't check recursion depth here,
@@ -1004,7 +1005,7 @@
             DISPATCH();
         }
 
-        TARGET(CALL_BOUND_METHOD_GENERAL) {
+        TARGET(CALL_BOUND_METHOD_GENERAL) { // 绑定方法通用（和参数精确相比）调用
             _Py_CODEUNIT *this_instr = frame->instr_ptr = next_instr;
             next_instr += 4;
             INSTRUCTION_STATS(CALL_BOUND_METHOD_GENERAL);
@@ -1026,20 +1027,20 @@
             callable = stack_pointer[-2 - oparg];
             {
                 uint32_t func_version = read_u32(&this_instr[2].cache);
-                DEOPT_IF(Py_TYPE(callable) != &PyMethod_Type, CALL);
-                PyObject *func = ((PyMethodObject *)callable)->im_func;
-                DEOPT_IF(!PyFunction_Check(func), CALL);
-                DEOPT_IF(((PyFunctionObject *)func)->func_version != func_version, CALL);
-                DEOPT_IF(null != NULL, CALL);
+                DEOPT_IF(Py_TYPE(callable) != &PyMethod_Type, CALL); // callable 必须为 PyMethod_Type 类型
+                PyObject *func = ((PyMethodObject *)callable)->im_func; // func是实现了该方法的可调用对象
+                DEOPT_IF(!PyFunction_Check(func), CALL); // func必须是一个函数
+                DEOPT_IF(((PyFunctionObject *)func)->func_version != func_version, CALL); // func的版本号必须与缓存中的版本号一致
+                DEOPT_IF(null != NULL, CALL); // null必须为NULL
             }
             // _EXPAND_METHOD
             {
                 assert(null == NULL);
                 assert(Py_TYPE(callable) == &PyMethod_Type);
-                self = ((PyMethodObject *)callable)->im_self;
+                self = ((PyMethodObject *)callable)->im_self; // 获取方法的实例对象self
                 Py_INCREF(self);
                 stack_pointer[-1 - oparg] = self;  // Patch stack as it is used by _PY_FRAME_GENERAL
-                method = ((PyMethodObject *)callable)->im_func;
+                method = ((PyMethodObject *)callable)->im_func; // 获取方法的函数对象
                 assert(PyFunction_Check(method));
                 Py_INCREF(method);
                 Py_DECREF(callable);
@@ -1061,7 +1062,7 @@
                 new_frame = _PyEvalFramePushAndInit(
                     tstate, (PyFunctionObject *)callable, locals,
                     args, total_args, NULL
-                );
+                ); // 创建新的解释器栈帧
                 // The frame has stolen all the arguments from the stack,
                 // so there is no need to clean them up.
                 stack_pointer += -2 - oparg;
@@ -1095,7 +1096,7 @@
             DISPATCH();
         }
 
-        TARGET(CALL_BUILTIN_CLASS) {
+        TARGET(CALL_BUILTIN_CLASS) { // 调用内置类
             frame->instr_ptr = next_instr;
             next_instr += 4;
             INSTRUCTION_STATS(CALL_BUILTIN_CLASS);
@@ -1116,11 +1117,11 @@
                     args--;
                     total_args++;
                 }
-                DEOPT_IF(!PyType_Check(callable), CALL);
+                DEOPT_IF(!PyType_Check(callable), CALL); // callable必须是一个类
                 PyTypeObject *tp = (PyTypeObject *)callable;
-                DEOPT_IF(tp->tp_vectorcall == NULL, CALL);
+                DEOPT_IF(tp->tp_vectorcall == NULL, CALL); // 类必须支持vectorcall
                 STAT_INC(CALL, hit);
-                res = tp->tp_vectorcall((PyObject *)tp, args, total_args, NULL);
+                res = tp->tp_vectorcall((PyObject *)tp, args, total_args, NULL); // 调用类的vectorcall方法
                 /* Free the arguments. */
                 for (int i = 0; i < total_args; i++) {
                     Py_DECREF(args[i]);
@@ -1137,7 +1138,7 @@
             DISPATCH();
         }
 
-        TARGET(CALL_BUILTIN_FAST) {
+        TARGET(CALL_BUILTIN_FAST) { // 调用c内置函数
             frame->instr_ptr = next_instr;
             next_instr += 4;
             INSTRUCTION_STATS(CALL_BUILTIN_FAST);
@@ -1162,12 +1163,12 @@
                 DEOPT_IF(!PyCFunction_CheckExact(callable), CALL);
                 DEOPT_IF(PyCFunction_GET_FLAGS(callable) != METH_FASTCALL, CALL);
                 STAT_INC(CALL, hit);
-                PyCFunction cfunc = PyCFunction_GET_FUNCTION(callable);
+                PyCFunction cfunc = PyCFunction_GET_FUNCTION(callable); // 获取c函数指针 todo c函数指针从哪里获取
                 /* res = func(self, args, nargs) */
                 res = ((PyCFunctionFast)(void(*)(void))cfunc)(
                     PyCFunction_GET_SELF(callable),
                     args,
-                    total_args);
+                    total_args); // 等价于res = cfunc(PyCFunction_GET_SELF(callable), args, total_args)
                 assert((res != NULL) ^ (_PyErr_Occurred(tstate) != NULL));
                 /* Free the arguments. */
                 for (int i = 0; i < total_args; i++) {
@@ -1185,7 +1186,7 @@
             DISPATCH();
         }
 
-        TARGET(CALL_BUILTIN_FAST_WITH_KEYWORDS) {
+        TARGET(CALL_BUILTIN_FAST_WITH_KEYWORDS) { // 调用c内置函数，且支持关键字参数
             frame->instr_ptr = next_instr;
             next_instr += 4;
             INSTRUCTION_STATS(CALL_BUILTIN_FAST_WITH_KEYWORDS);
@@ -1213,8 +1214,8 @@
                 /* res = func(self, args, nargs, kwnames) */
                 PyCFunctionFastWithKeywords cfunc =
                 (PyCFunctionFastWithKeywords)(void(*)(void))
-                PyCFunction_GET_FUNCTION(callable);
-                res = cfunc(PyCFunction_GET_SELF(callable), args, total_args, NULL);
+                PyCFunction_GET_FUNCTION(callable); // 获取c函数指针
+                res = cfunc(PyCFunction_GET_SELF(callable), args, total_args, NULL); // 等价于res = cfunc(PyCFunction_GET_SELF(callable), args, total_args, NULL)，相较于CALL_BUILTIN_FAST，多了一个参数存储关键字参数
                 assert((res != NULL) ^ (_PyErr_Occurred(tstate) != NULL));
                 /* Free the arguments. */
                 for (int i = 0; i < total_args; i++) {
@@ -1232,7 +1233,7 @@
             DISPATCH();
         }
 
-        TARGET(CALL_BUILTIN_O) {
+        TARGET(CALL_BUILTIN_O) { // 调用c内置函数，且只有一个参数
             frame->instr_ptr = next_instr;
             next_instr += 4;
             INSTRUCTION_STATS(CALL_BUILTIN_O);
@@ -1260,10 +1261,10 @@
                 // CPython promises to check all non-vectorcall function calls.
                 DEOPT_IF(tstate->c_recursion_remaining <= 0, CALL);
                 STAT_INC(CALL, hit);
-                PyCFunction cfunc = PyCFunction_GET_FUNCTION(callable);
+                PyCFunction cfunc = PyCFunction_GET_FUNCTION(callable); // 获取c函数指针
                 PyObject *arg = args[0];
                 _Py_EnterRecursiveCallTstateUnchecked(tstate);
-                res = _PyCFunction_TrampolineCall(cfunc, PyCFunction_GET_SELF(callable), arg);
+                res = _PyCFunction_TrampolineCall(cfunc, PyCFunction_GET_SELF(callable), arg); // 等价于res = cfunc(PyCFunction_GET_SELF(callable), arg)
                 _Py_LeaveRecursiveCallTstate(tstate);
                 assert((res != NULL) ^ (_PyErr_Occurred(tstate) != NULL));
                 Py_DECREF(arg);
@@ -1279,7 +1280,7 @@
             DISPATCH();
         }
 
-        TARGET(CALL_FUNCTION_EX) {
+        TARGET(CALL_FUNCTION_EX) { // 用于调用一个函数，并且支持传递位置参数和关键字参数
             frame->instr_ptr = next_instr;
             next_instr += 1;
             INSTRUCTION_STATS(CALL_FUNCTION_EX);
@@ -1290,25 +1291,25 @@
             PyObject *callargs;
             PyObject *func;
             PyObject *result;
-            if (oparg & 1) { kwargs = stack_pointer[-(oparg & 1)]; }
+            if (oparg & 1) { kwargs = stack_pointer[-(oparg & 1)]; } // 尝试获取kwargs
             callargs = stack_pointer[-1 - (oparg & 1)];
             func = stack_pointer[-3 - (oparg & 1)];
             // DICT_MERGE is called before this opcode if there are kwargs.
             // It converts all dict subtypes in kwargs into regular dicts.
             assert(kwargs == NULL || PyDict_CheckExact(kwargs));
-            if (!PyTuple_CheckExact(callargs)) {
-                if (check_args_iterable(tstate, func, callargs) < 0) {
+            if (!PyTuple_CheckExact(callargs)) { // 如果callargs不是元组，转换为元组
+                if (check_args_iterable(tstate, func, callargs) < 0) { // 检查callargs是否可迭代
                     goto error;
                 }
-                PyObject *tuple = PySequence_Tuple(callargs);
+                PyObject *tuple = PySequence_Tuple(callargs); // 调用PySequence_Tuple将可以将可迭代对象（如列表、集合等）转换为元组
                 if (tuple == NULL) {
                     goto error;
                 }
                 Py_SETREF(callargs, tuple);
             }
             assert(PyTuple_CheckExact(callargs));
-            EVAL_CALL_STAT_INC_IF_FUNCTION(EVAL_CALL_FUNCTION_EX, func);
-            if (opcode == INSTRUMENTED_CALL_FUNCTION_EX) {
+            EVAL_CALL_STAT_INC_IF_FUNCTION(EVAL_CALL_FUNCTION_EX, func); // 如果func是一个函数，增加调用计数
+            if (opcode == INSTRUMENTED_CALL_FUNCTION_EX) { // 关于调试与监控的逻辑
                 PyObject *arg = PyTuple_GET_SIZE(callargs) > 0 ?
                 PyTuple_GET_ITEM(callargs, 0) : &_PyInstrumentation_MISSING;
                 int err = _Py_call_instrumentation_2args(
@@ -1335,14 +1336,14 @@
             else {
                 if (Py_TYPE(func) == &PyFunction_Type &&
                     tstate->interp->eval_frame == NULL &&
-                    ((PyFunctionObject *)func)->vectorcall == _PyFunction_Vectorcall) {
+                    ((PyFunctionObject *)func)->vectorcall == _PyFunction_Vectorcall) { // 如果func是一个函数，并且支持内敛调用（vectorcall）
                     assert(PyTuple_CheckExact(callargs));
                     Py_ssize_t nargs = PyTuple_GET_SIZE(callargs);
                     int code_flags = ((PyCodeObject *)PyFunction_GET_CODE(func))->co_flags;
                     PyObject *locals = code_flags & CO_OPTIMIZED ? NULL : Py_NewRef(PyFunction_GET_GLOBALS(func));
                     _PyInterpreterFrame *new_frame = _PyEvalFramePushAndInit_Ex(tstate,
                         (PyFunctionObject *)func, locals,
-                        nargs, callargs, kwargs);
+                        nargs, callargs, kwargs); // 和_PyEvalFramePushAndInit类似，但是增加了一个元组参数callargs和一个字典参数kwargs，todo 定义见Python/ceval.c
                     // Need to manually shrink the stack since we exit with DISPATCH_INLINED.
                     STACK_SHRINK(oparg + 3);
                     if (new_frame == NULL) {
@@ -1352,7 +1353,7 @@
                     frame->return_offset = 1;
                     DISPATCH_INLINED(new_frame);
                 }
-                result = PyObject_Call(func, callargs, kwargs);
+                result = PyObject_Call(func, callargs, kwargs); // 内联调用失败则通过PyObject_Call调用
             }
             Py_DECREF(func);
             Py_DECREF(callargs);
@@ -1365,7 +1366,7 @@
             DISPATCH();
         }
 
-        TARGET(CALL_INTRINSIC_1) {
+        TARGET(CALL_INTRINSIC_1) { // 调用内置函数，只有一个参数
             frame->instr_ptr = next_instr;
             next_instr += 1;
             INSTRUCTION_STATS(CALL_INTRINSIC_1);
@@ -1373,14 +1374,14 @@
             PyObject *res;
             value = stack_pointer[-1];
             assert(oparg <= MAX_INTRINSIC_1);
-            res = _PyIntrinsics_UnaryFunctions[oparg].func(tstate, value);
+            res = _PyIntrinsics_UnaryFunctions[oparg].func(tstate, value);// 见Python/intrinsics.c，定义了一些只有一个参数的内置函数
             Py_DECREF(value);
             if (res == NULL) goto pop_1_error;
             stack_pointer[-1] = res;
             DISPATCH();
         }
 
-        TARGET(CALL_INTRINSIC_2) {
+        TARGET(CALL_INTRINSIC_2) { // 调用内置函数，只有两个参数
             frame->instr_ptr = next_instr;
             next_instr += 1;
             INSTRUCTION_STATS(CALL_INTRINSIC_2);
@@ -1390,7 +1391,7 @@
             value1 = stack_pointer[-1];
             value2 = stack_pointer[-2];
             assert(oparg <= MAX_INTRINSIC_2);
-            res = _PyIntrinsics_BinaryFunctions[oparg].func(tstate, value2, value1);
+            res = _PyIntrinsics_BinaryFunctions[oparg].func(tstate, value2, value1);// 见Python/intrinsics.c，定义了一些只有两个参数的内置函数
             Py_DECREF(value2);
             Py_DECREF(value1);
             if (res == NULL) goto pop_2_error;
@@ -1399,7 +1400,7 @@
             DISPATCH();
         }
 
-        TARGET(CALL_ISINSTANCE) {
+        TARGET(CALL_ISINSTANCE) { // isinstance的指令
             frame->instr_ptr = next_instr;
             next_instr += 4;
             INSTRUCTION_STATS(CALL_ISINSTANCE);
@@ -1425,7 +1426,7 @@
             STAT_INC(CALL, hit);
             PyObject *cls = args[1];
             PyObject *inst = args[0];
-            int retval = PyObject_IsInstance(inst, cls);
+            int retval = PyObject_IsInstance(inst, cls); // todo 调用PyObject_IsInstance函数，其内部调用了object_recursive_isinstance，定义在Objects/abstract.c中
             if (retval < 0) {
                 goto error;
             }
@@ -1442,7 +1443,7 @@
             DISPATCH();
         }
 
-        TARGET(CALL_KW) {
+        TARGET(CALL_KW) { // 带有关键字参数的函数调用
             frame->instr_ptr = next_instr;
             next_instr += 1;
             INSTRUCTION_STATS(CALL_KW);
@@ -1464,7 +1465,7 @@
                 args--;
                 total_args++;
             }
-            if (self_or_null == NULL && Py_TYPE(callable) == &PyMethod_Type) {
+            if (self_or_null == NULL && Py_TYPE(callable) == &PyMethod_Type) { // callable是一个绑定在对象上的方法
                 args--;
                 total_args++;
                 PyObject *self = ((PyMethodObject *)callable)->im_self;
@@ -1474,7 +1475,7 @@
                 Py_DECREF(callable);
                 callable = method;
             }
-            int positional_args = total_args - (int)PyTuple_GET_SIZE(kwnames);
+            int positional_args = total_args - (int)PyTuple_GET_SIZE(kwnames); // 计算位置参数的数量
             // Check if the call can be inlined or not
             if (Py_TYPE(callable) == &PyFunction_Type &&
                 tstate->interp->eval_frame == NULL &&
@@ -1502,7 +1503,7 @@
             res = PyObject_Vectorcall(
                                       callable, args,
                                       positional_args | PY_VECTORCALL_ARGUMENTS_OFFSET,
-                                      kwnames);
+                                      kwnames); // 不是普通Python函数时,使用PyObject_Vectorcall处理调用，和CALL指令的区别在于这里多了一个kwnames参数
             if (opcode == INSTRUMENTED_CALL_KW) {
                 PyObject *arg = total_args == 0 ?
                 &_PyInstrumentation_MISSING : args[0];
@@ -1558,7 +1559,7 @@
             DEOPT_IF(callable != interp->callable_cache.len, CALL);
             STAT_INC(CALL, hit);
             PyObject *arg = args[0];
-            Py_ssize_t len_i = PyObject_Length(arg);
+            Py_ssize_t len_i = PyObject_Length(arg); // 定义在Objects/abstract.h中的一个宏，实现在Objects/abstract.c中的PyObject_Size函数
             if (len_i < 0) {
                 goto error;
             }
@@ -1574,7 +1575,7 @@
             DISPATCH();
         }
 
-        TARGET(CALL_LIST_APPEND) {
+        TARGET(CALL_LIST_APPEND) { // 针对于list.append的特化指令
             frame->instr_ptr = next_instr;
             next_instr += 4;
             INSTRUCTION_STATS(CALL_LIST_APPEND);
@@ -1635,7 +1636,7 @@
                 DEOPT_IF(!Py_IS_TYPE(self, method->d_common.d_type), CALL);
                 STAT_INC(CALL, hit);
                 PyCFunctionFast cfunc =
-                (PyCFunctionFast)(void(*)(void))meth->ml_meth;
+                (PyCFunctionFast)(void(*)(void))meth->ml_meth; // 与CALL_METHOD_DESCRIPTOR_FAST_WITH_KEYWORDS的区别在于这里是PyCFunctionFast
                 int nargs = total_args - 1;
                 res = cfunc(self, args + 1, nargs);
                 assert((res != NULL) ^ (_PyErr_Occurred(tstate) != NULL));
@@ -1686,15 +1687,15 @@
                 STAT_INC(CALL, hit);
                 int nargs = total_args - 1;
                 PyCFunctionFastWithKeywords cfunc =
-                (PyCFunctionFastWithKeywords)(void(*)(void))meth->ml_meth;
-                res = cfunc(self, args + 1, nargs, NULL);
+                (PyCFunctionFastWithKeywords)(void(*)(void))meth->ml_meth; // meth->ml_meth是实际的C函数
+                res = cfunc(self, args + 1, nargs, NULL); // 等价于res = cfunc(self,args+1,nargs,NULL)
                 assert((res != NULL) ^ (_PyErr_Occurred(tstate) != NULL));
                 /* Free the arguments. */
                 for (int i = 0; i < total_args; i++) {
                     Py_DECREF(args[i]);
                 }
                 Py_DECREF(callable);
-                if (res == NULL) { stack_pointer += -2 - oparg; goto error; }
+                if (res == NULL) { stack_pointer += -2 - oparg; goto error; } // 如果调用失败，直接跳转到error
             }
             // _CHECK_PERIODIC
             {
@@ -1737,7 +1738,7 @@
                 // CPython promises to check all non-vectorcall function calls.
                 DEOPT_IF(tstate->c_recursion_remaining <= 0, CALL);
                 STAT_INC(CALL, hit);
-                PyCFunction cfunc = meth->ml_meth;
+                PyCFunction cfunc = meth->ml_meth; // 获得实际实现的C函数
                 _Py_EnterRecursiveCallTstateUnchecked(tstate);
                 res = _PyCFunction_TrampolineCall(cfunc, self, NULL);
                 _Py_LeaveRecursiveCallTstate(tstate);
@@ -1789,7 +1790,7 @@
                 STAT_INC(CALL, hit);
                 PyCFunction cfunc = meth->ml_meth;
                 _Py_EnterRecursiveCallTstateUnchecked(tstate);
-                res = _PyCFunction_TrampolineCall(cfunc, self, arg);
+                res = _PyCFunction_TrampolineCall(cfunc, self, arg); // 等价于res = cfunc(self,arg)
                 _Py_LeaveRecursiveCallTstate(tstate);
                 assert((res != NULL) ^ (_PyErr_Occurred(tstate) != NULL));
                 Py_DECREF(self);
@@ -1806,7 +1807,7 @@
             DISPATCH();
         }
 
-        TARGET(CALL_NON_PY_GENERAL) {
+        TARGET(CALL_NON_PY_GENERAL) { // 非python函数的通用调用
             frame->instr_ptr = next_instr;
             next_instr += 4;
             INSTRUCTION_STATS(CALL_NON_PY_GENERAL);
@@ -1856,7 +1857,7 @@
             DISPATCH();
         }
 
-        TARGET(CALL_PY_EXACT_ARGS) {
+        TARGET(CALL_PY_EXACT_ARGS) { // 调用python函数且参数数量精确匹配的特化指令
             _Py_CODEUNIT *this_instr = frame->instr_ptr = next_instr;
             next_instr += 4;
             INSTRUCTION_STATS(CALL_PY_EXACT_ARGS);
@@ -1895,7 +1896,7 @@
                 int has_self = (self_or_null != NULL);
                 STAT_INC(CALL, hit);
                 PyFunctionObject *func = (PyFunctionObject *)callable;
-                new_frame = _PyFrame_PushUnchecked(tstate, func, oparg + has_self);
+                new_frame = _PyFrame_PushUnchecked(tstate, func, oparg + has_self); // 创建新栈帧用于执行
                 PyObject **first_non_self_local = new_frame->localsplus + has_self;
                 new_frame->localsplus[0] = self_or_null;
                 for (int i = 0; i < oparg; i++) {
@@ -1929,7 +1930,7 @@
             DISPATCH();
         }
 
-        TARGET(CALL_PY_GENERAL) {
+        TARGET(CALL_PY_GENERAL) { // 针对Python函数的通用调用指令
             _Py_CODEUNIT *this_instr = frame->instr_ptr = next_instr;
             next_instr += 4;
             INSTRUCTION_STATS(CALL_PY_GENERAL);
@@ -1941,7 +1942,7 @@
             /* Skip 1 cache entry */
             // _CHECK_PEP_523
             {
-                DEOPT_IF(tstate->interp->eval_frame, CALL);
+                DEOPT_IF(tstate->interp->eval_frame, CALL); // 这里检查是否存在 PEP 523 的 eval_frame 机制。如果正在执行 eval_frame，则跳过当前优化路径，跳转到回退路径（CALL）
             }
             // _CHECK_FUNCTION_VERSION
             callable = stack_pointer[-2 - oparg];
@@ -1963,11 +1964,11 @@
                 }
                 assert(Py_TYPE(callable) == &PyFunction_Type);
                 int code_flags = ((PyCodeObject*)PyFunction_GET_CODE(callable))->co_flags;
-                PyObject *locals = code_flags & CO_OPTIMIZED ? NULL : Py_NewRef(PyFunction_GET_GLOBALS(callable));
+                PyObject *locals = code_flags & CO_OPTIMIZED ? NULL : Py_NewRef(PyFunction_GET_GLOBALS(callable)); // 函数为优化过，需要创建新的局部变量对象
                 new_frame = _PyEvalFramePushAndInit(
                     tstate, (PyFunctionObject *)callable, locals,
                     args, total_args, NULL
-                );
+                ); // 初始化新栈帧
                 // The frame has stolen all the arguments from the stack,
                 // so there is no need to clean them up.
                 stack_pointer += -2 - oparg;
@@ -2001,7 +2002,7 @@
             DISPATCH();
         }
 
-        TARGET(CALL_STR_1) {
+        TARGET(CALL_STR_1) { // str(...)操作
             frame->instr_ptr = next_instr;
             next_instr += 4;
             INSTRUCTION_STATS(CALL_STR_1);
@@ -2034,7 +2035,7 @@
             DISPATCH();
         }
 
-        TARGET(CALL_TUPLE_1) {
+        TARGET(CALL_TUPLE_1) { // tuple(...)操作
             frame->instr_ptr = next_instr;
             next_instr += 4;
             INSTRUCTION_STATS(CALL_TUPLE_1);
@@ -2067,7 +2068,7 @@
             DISPATCH();
         }
 
-        TARGET(CALL_TYPE_1) {
+        TARGET(CALL_TYPE_1) { // class类型转换操作
             frame->instr_ptr = next_instr;
             next_instr += 4;
             INSTRUCTION_STATS(CALL_TYPE_1);
@@ -2756,37 +2757,37 @@
             DISPATCH();
         }
 
-        TARGET(FOR_ITER) {
-            frame->instr_ptr = next_instr;
-            next_instr += 2;
-            INSTRUCTION_STATS(FOR_ITER);
-            PREDICTED(FOR_ITER);
-            _Py_CODEUNIT *this_instr = next_instr - 2;
+        TARGET(FOR_ITER) { // 处理循环迭代器的字节码
+            frame->instr_ptr = next_instr; // 当前指令
+            next_instr += 2; // 下一条指令
+            INSTRUCTION_STATS(FOR_ITER); // 统计FOR_ITER字节码的信息（某个计数器++），见ceval_macros.h定义
+            PREDICTED(FOR_ITER); // 见ceval_macros.h定义
+            _Py_CODEUNIT *this_instr = next_instr - 2; // 当前指令
             (void)this_instr;
             PyObject *iter;
             PyObject *next;
             // _SPECIALIZE_FOR_ITER
-            iter = stack_pointer[-1];
-            {
+            iter = stack_pointer[-1]; // 被迭代对象，在栈顶
+            { // 内联缓存优化，指令特化
                 uint16_t counter = read_u16(&this_instr[1].cache);
                 (void)counter;
                 #if ENABLE_SPECIALIZATION
-                if (ADAPTIVE_COUNTER_TRIGGERS(counter)) {
+                if (ADAPTIVE_COUNTER_TRIGGERS(counter)) { // 计数器到达0
                     next_instr = this_instr;
-                    _Py_Specialize_ForIter(iter, next_instr, oparg);
-                    DISPATCH_SAME_OPARG();
+                    _Py_Specialize_ForIter(iter, next_instr, oparg); // 特化
+                    DISPATCH_SAME_OPARG(); // 重新执行当前指令
                 }
                 STAT_INC(FOR_ITER, deferred);
-                ADVANCE_ADAPTIVE_COUNTER(this_instr[1].counter);
+                ADVANCE_ADAPTIVE_COUNTER(this_instr[1].counter); // 计数器-1
                 #endif  /* ENABLE_SPECIALIZATION */
             }
             // _FOR_ITER
             {
                 /* before: [iter]; after: [iter, iter()] *or* [] (and jump over END_FOR.) */
-                next = (*Py_TYPE(iter)->tp_iternext)(iter);
+                next = (*Py_TYPE(iter)->tp_iternext)(iter); // 获取下一个元素
                 if (next == NULL) {
                     if (_PyErr_Occurred(tstate)) {
-                        if (!_PyErr_ExceptionMatches(tstate, PyExc_StopIteration)) {
+                        if (!_PyErr_ExceptionMatches(tstate, PyExc_StopIteration)) { // PyExc_StopIteration代表迭代器正常结束
                             goto error;
                         }
                         _PyEval_MonitorRaise(tstate, frame, this_instr);
@@ -2801,14 +2802,14 @@
                     JUMPBY(oparg + 2);
                     DISPATCH();
                 }
-                // Common case: no jump, leave it to the code generator
+                // Common case: no jump, leave it to the code generator ?
             }
-            stack_pointer[0] = next;
+            stack_pointer[0] = next; // 元素入栈
             stack_pointer += 1;
             DISPATCH();
         }
 
-        TARGET(FOR_ITER_GEN) {
+        TARGET(FOR_ITER_GEN) { // 生成器的特化指令，负责push一个新的栈帧，实际的迭代操作由__next__()方法实现
             frame->instr_ptr = next_instr;
             next_instr += 2;
             INSTRUCTION_STATS(FOR_ITER_GEN);
@@ -2819,22 +2820,22 @@
             /* Skip 1 cache entry */
             // _CHECK_PEP_523
             {
-                DEOPT_IF(tstate->interp->eval_frame, FOR_ITER);
+                DEOPT_IF(tstate->interp->eval_frame, FOR_ITER); // 检查解释器的 eval_frame 是否为非空。如果是，表示当前处于解释器的执行状态中，这时不能继续执行生成器特化迭代，必须回退到通用的 FOR_ITER 指令
             }
             // _FOR_ITER_GEN_FRAME
             iter = stack_pointer[-1];
             {
                 PyGenObject *gen = (PyGenObject *)iter;
-                DEOPT_IF(Py_TYPE(gen) != &PyGen_Type, FOR_ITER);
-                DEOPT_IF(gen->gi_frame_state >= FRAME_EXECUTING, FOR_ITER);
-                STAT_INC(FOR_ITER, hit);
+                DEOPT_IF(Py_TYPE(gen) != &PyGen_Type, FOR_ITER); // 类型不匹配
+                DEOPT_IF(gen->gi_frame_state >= FRAME_EXECUTING, FOR_ITER); // 生成器状态处于执行中，不能特化，去优化为普通的 FOR_ITER
+                STAT_INC(FOR_ITER, hit); // 增加命中次数
                 gen_frame = (_PyInterpreterFrame *)gen->gi_iframe;
                 _PyFrame_StackPush(gen_frame, Py_None);
-                gen->gi_frame_state = FRAME_EXECUTING;
+                gen->gi_frame_state = FRAME_EXECUTING; // 设置当前栈帧（生成器）正在执行
                 gen->gi_exc_state.previous_item = tstate->exc_info;
-                tstate->exc_info = &gen->gi_exc_state;
+                tstate->exc_info = &gen->gi_exc_state; // 保存当前线程状态的异常信息，并将其指向生成器的异常状态，以便处理生成器内部可能发生的异常
                 // oparg is the return offset from the next instruction.
-                frame->return_offset = (uint16_t)(1 + INLINE_CACHE_ENTRIES_FOR_ITER + oparg);
+                frame->return_offset = (uint16_t)(1 + INLINE_CACHE_ENTRIES_FOR_ITER + oparg); // 设置返回偏移量 return_offset，这决定了生成器迭代完成后，执行哪个指令
             }
             // _PUSH_FRAME
             new_frame = gen_frame;
@@ -2842,19 +2843,19 @@
                 // Write it out explicitly because it's subtly different.
                 // Eventually this should be the only occurrence of this code.
                 assert(tstate->interp->eval_frame == NULL);
-                _PyFrame_SetStackPointer(frame, stack_pointer);
-                new_frame->previous = frame;
-                CALL_STAT_INC(inlined_py_calls);
-                frame = tstate->current_frame = new_frame;
-                tstate->py_recursion_remaining--;
+                _PyFrame_SetStackPointer(frame, stack_pointer); // 设置当前栈帧的栈指针为stack_pointer，确保正确地访问生成器的栈数据
+                new_frame->previous = frame; // 维护调用链关系，将新栈帧的previous指针指向前一个帧，见pycore_frame.h的定义
+                CALL_STAT_INC(inlined_py_calls); // 记录内联调用的统计信息
+                frame = tstate->current_frame = new_frame; // 更新当前执行帧、更新线程状态中的当前帧 为新生成器帧
+                tstate->py_recursion_remaining--; // 控制递归深度（Python最大递归深度）
                 LOAD_SP();
-                LOAD_IP(0);
+                LOAD_IP(0); // 加载栈指针和指令计数器，初始化当前栈帧
                 LLTRACE_RESUME_FRAME();
             }
             DISPATCH();
         }
 
-        TARGET(FOR_ITER_LIST) {
+        TARGET(FOR_ITER_LIST) { // 专门针对列表迭代的特化指令
             frame->instr_ptr = next_instr;
             next_instr += 2;
             INSTRUCTION_STATS(FOR_ITER_LIST);
@@ -2863,17 +2864,17 @@
             PyObject *next;
             /* Skip 1 cache entry */
             // _ITER_CHECK_LIST
-            iter = stack_pointer[-1];
+            iter = stack_pointer[-1];  // 获取迭代器对象
             {
-                DEOPT_IF(Py_TYPE(iter) != &PyListIter_Type, FOR_ITER);
+                DEOPT_IF(Py_TYPE(iter) != &PyListIter_Type, FOR_ITER); // 去优化
             }
             // _ITER_JUMP_LIST
             {
                 _PyListIterObject *it = (_PyListIterObject *)iter;
                 assert(Py_TYPE(iter) == &PyListIter_Type);
                 STAT_INC(FOR_ITER, hit);
-                PyListObject *seq = it->it_seq;
-                if (seq == NULL || (size_t)it->it_index >= (size_t)PyList_GET_SIZE(seq)) {
+                PyListObject *seq = it->it_seq; // 被迭代对象的序列
+                if (seq == NULL || (size_t)it->it_index >= (size_t)PyList_GET_SIZE(seq)) { // 迭代完成
                     it->it_index = -1;
                     #ifndef Py_GIL_DISABLED
                     if (seq != NULL) {
@@ -2882,20 +2883,20 @@
                     }
                     #endif
                     Py_DECREF(iter);
-                    STACK_SHRINK(1);
+                    STACK_SHRINK(1); // 从栈中移除迭代器对象
                     /* Jump forward oparg, then skip following END_FOR and POP_TOP instructions */
                     JUMPBY(oparg + 2);
                     DISPATCH();
                 }
             }
-            // _ITER_NEXT_LIST
+            // _ITER_NEXT_LIST 迭代未完成，则会执行到此
             {
                 _PyListIterObject *it = (_PyListIterObject *)iter;
                 assert(Py_TYPE(iter) == &PyListIter_Type);
                 PyListObject *seq = it->it_seq;
                 assert(seq);
                 assert(it->it_index < PyList_GET_SIZE(seq));
-                next = Py_NewRef(PyList_GET_ITEM(seq, it->it_index++));
+                next = Py_NewRef(PyList_GET_ITEM(seq, it->it_index++)); // 获取当前下标的元素（并下标后移），实际的迭代逻辑，见pycore_list.h
             }
             stack_pointer[0] = next;
             stack_pointer += 1;
@@ -2935,8 +2936,8 @@
                 assert(Py_TYPE(r) == &PyRangeIter_Type);
                 assert(r->len > 0);
                 long value = r->start;
-                r->start = value + r->step;
-                r->len--;
+                r->start = value + r->step; // start = start + step 实现指针后移的效果
+                r->len--; // len决定是否迭代结束（剩余元素个数）
                 next = PyLong_FromLong(value);
                 if (next == NULL) goto error;
             }
@@ -2945,7 +2946,7 @@
             DISPATCH();
         }
 
-        TARGET(FOR_ITER_TUPLE) {
+        TARGET(FOR_ITER_TUPLE) { // 逻辑同 FOR_ITER_LIST
             frame->instr_ptr = next_instr;
             next_instr += 2;
             INSTRUCTION_STATS(FOR_ITER_TUPLE);
@@ -3597,19 +3598,19 @@
             DISPATCH();
         }
 
-        TARGET(JUMP_BACKWARD) {
+        TARGET(JUMP_BACKWARD) { // 处理跳转指令的逻辑，具体指回跳（循环）
             _Py_CODEUNIT *this_instr = frame->instr_ptr = next_instr;
             (void)this_instr;
             next_instr += 2;
             INSTRUCTION_STATS(JUMP_BACKWARD);
             /* Skip 1 cache entry */
-            CHECK_EVAL_BREAKER();
+            CHECK_EVAL_BREAKER(); // 用于检查过程中是否触发了退出条件
             assert(oparg <= INSTR_OFFSET());
             JUMPBY(-oparg);
             #ifdef _Py_TIER2
             #if ENABLE_SPECIALIZATION
             _Py_BackoffCounter counter = this_instr[1].counter;
-            if (backoff_counter_triggers(counter) && this_instr->op.code == JUMP_BACKWARD) {
+            if (backoff_counter_triggers(counter) && this_instr->op.code == JUMP_BACKWARD) { // backoff计数器清零，触发JIT编译
                 _Py_CODEUNIT *start = this_instr;
                 /* Back up over EXTENDED_ARGs so optimizer sees the whole instruction */
                 while (oparg > 255) {
@@ -3619,7 +3620,7 @@
                 _PyExecutorObject *executor;
                 int optimized = _PyOptimizer_Optimize(frame, start, stack_pointer, &executor);
                 if (optimized < 0) goto error;
-                if (optimized) {
+                if (optimized) { // 如果优化成功，则跳转到优化后的执行器处
                     assert(tstate->previous_executor == NULL);
                     tstate->previous_executor = Py_None;
                     GOTO_TIER_TWO(executor);
@@ -5849,7 +5850,7 @@
             DISPATCH();
         }
 
-        TARGET(TO_BOOL) {
+        TARGET(TO_BOOL) { // 对象隐式转换为bool
             frame->instr_ptr = next_instr;
             next_instr += 4;
             INSTRUCTION_STATS(TO_BOOL);
@@ -6067,7 +6068,7 @@
             DISPATCH();
         }
 
-        TARGET(UNPACK_SEQUENCE) {
+        TARGET(UNPACK_SEQUENCE) { // 解包
             frame->instr_ptr = next_instr;
             next_instr += 2;
             INSTRUCTION_STATS(UNPACK_SEQUENCE);
@@ -6118,7 +6119,7 @@
             STAT_INC(UNPACK_SEQUENCE, hit);
             PyObject **items = _PyList_ITEMS(seq);
             for (int i = oparg; --i >= 0; ) {
-                *values++ = Py_NewRef(items[i]);
+                *values++ = Py_NewRef(items[i]); // 迭代压栈
             }
             Py_DECREF(seq);
             stack_pointer += -1 + oparg;

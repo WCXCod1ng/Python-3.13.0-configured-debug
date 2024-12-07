@@ -63,7 +63,7 @@ make_backoff_counter(uint16_t value, uint16_t backoff)
 }
 
 static inline _Py_BackoffCounter
-forge_backoff_counter(uint16_t counter)
+forge_backoff_counter(uint16_t counter) // 类似于将uint16_t转化为_Py_BackoffCounter类型
 {
     _Py_BackoffCounter result;
     result.as_counter = counter;
@@ -89,7 +89,7 @@ pause_backoff_counter(_Py_BackoffCounter counter)
 }
 
 static inline _Py_BackoffCounter
-advance_backoff_counter(_Py_BackoffCounter counter)
+advance_backoff_counter(_Py_BackoffCounter counter) // 计数器减1
 {
     if (!is_unreachable_backoff_counter(counter)) {
         return make_backoff_counter((counter.value - 1) & 0xFFF, counter.backoff);

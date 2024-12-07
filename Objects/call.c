@@ -321,7 +321,7 @@ PyVectorcall_Call(PyObject *callable, PyObject *tuple, PyObject *kwargs)
 
 PyObject *
 PyObject_Vectorcall(PyObject *callable, PyObject *const *args,
-                     size_t nargsf, PyObject *kwnames)
+                     size_t nargsf, PyObject *kwnames) // vector call
 {
     PyThreadState *tstate = _PyThreadState_GET();
     return _PyObject_VectorcallTstate(tstate, callable,

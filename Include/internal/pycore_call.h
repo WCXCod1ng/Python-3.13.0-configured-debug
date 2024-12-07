@@ -160,12 +160,12 @@ _PyObject_VectorcallTstate(PyThreadState *tstate, PyObject *callable,
     assert(kwnames == NULL || PyTuple_Check(kwnames));
     assert(args != NULL || PyVectorcall_NARGS(nargsf) == 0);
 
-    func = _PyVectorcall_FunctionInline(callable);
+    func = _PyVectorcall_FunctionInline(callable); // 调用_PyVectorcall_FunctionInline函数获取与callable对象相关的向量调用函数func。这个向量调用函数是为了提高性能，直接调用的目标函数指针
     if (func == NULL) {
         Py_ssize_t nargs = PyVectorcall_NARGS(nargsf);
-        return _PyObject_MakeTpCall(tstate, callable, args, nargs, kwnames);
+        return _PyObject_MakeTpCall(tstate, callable, args, nargs, kwnames); // 如果func为空，意味着callable没有定义向量调用函数（即它不支持向量调用），这时就回退到传统的_PyObject_MakeTpCall来执行调用。这通常是一个普通的函数调用，传入参数args、nargs（通过nargsf解码）以及关键字参数kwnames
     }
-    res = func(callable, args, nargsf, kwnames);
+    res = func(callable, args, nargsf, kwnames); // 执行向量调用
     return _Py_CheckFunctionResult(tstate, callable, res, NULL);
 }
 

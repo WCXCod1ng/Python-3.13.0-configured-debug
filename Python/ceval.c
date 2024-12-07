@@ -1736,7 +1736,7 @@ _PyEvalFramePushAndInit(PyThreadState *tstate, PyFunctionObject *func,
     if (frame == NULL) {
         goto fail;
     }
-    _PyFrame_Initialize(frame, func, locals, code, 0);
+    _PyFrame_Initialize(frame, func, locals, code, 0); // 为新的frame初始化，包括设置code, locals, func等
     if (initialize_locals(tstate, func, frame->localsplus, args, argcount, kwnames)) {
         assert(frame->owner == FRAME_OWNED_BY_THREAD);
         clear_thread_frame(tstate, frame);
@@ -2085,7 +2085,7 @@ _PyEval_UnpackIterable(PyThreadState *tstate, PyObject *v,
 
     assert(v != NULL);
 
-    it = PyObject_GetIter(v);
+    it = PyObject_GetIter(v); // 获取v的迭代器（要求v必须是可迭代的）
     if (it == NULL) {
         if (_PyErr_ExceptionMatches(tstate, PyExc_TypeError) &&
             Py_TYPE(v)->tp_iter == NULL && !PySequence_Check(v))
@@ -2098,7 +2098,7 @@ _PyEval_UnpackIterable(PyThreadState *tstate, PyObject *v,
     }
 
     for (; i < argcnt; i++) {
-        w = PyIter_Next(it);
+        w = PyIter_Next(it); // 获取下一个元素
         if (w == NULL) {
             /* Iterator done, via error or exhaustion. */
             if (!_PyErr_Occurred(tstate)) {
@@ -2117,7 +2117,7 @@ _PyEval_UnpackIterable(PyThreadState *tstate, PyObject *v,
             }
             goto Error;
         }
-        *--sp = w;
+        *--sp = w; // 赋值到等号左侧变量中
     }
 
     if (argcntafter == -1) {

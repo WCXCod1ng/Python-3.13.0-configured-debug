@@ -894,7 +894,7 @@ _Py_Specialize_LoadAttr(PyObject *owner, _Py_CODEUNIT *instr, PyObject *name)
     assert(ENABLE_SPECIALIZATION);
     assert(_PyOpcode_Caches[LOAD_ATTR] == INLINE_CACHE_ENTRIES_LOAD_ATTR);
     _PyAttrCache *cache = (_PyAttrCache *)(instr + 1);
-    PyTypeObject *type = Py_TYPE(owner);
+    PyTypeObject *type = Py_TYPE(owner); // 接受对象类型
     if (!_PyType_IsReady(type)) {
         // We *might* not really need this check, but we inherited it from
         // PyObject_GenericGetAttr and friends... and this way we still do the
@@ -916,7 +916,7 @@ _Py_Specialize_LoadAttr(PyObject *owner, _Py_CODEUNIT *instr, PyObject *name)
         goto success;
     }
     PyObject *descr = NULL;
-    DescriptorClassification kind = analyze_descriptor(type, name, &descr, 0);
+    DescriptorClassification kind = analyze_descriptor(type, name, &descr, 0); // 获取属性的类型
     assert(descr != NULL || kind == ABSENT || kind == GETSET_OVERRIDDEN);
     if (type_get_version(type, LOAD_ATTR) == 0) {
         goto fail;
@@ -925,7 +925,7 @@ _Py_Specialize_LoadAttr(PyObject *owner, _Py_CODEUNIT *instr, PyObject *name)
         case OVERRIDING:
             SPECIALIZATION_FAIL(LOAD_ATTR, SPEC_FAIL_ATTR_OVERRIDING_DESCRIPTOR);
             goto fail;
-        case METHOD:
+        case METHOD: // 方法
         {
             int oparg = instr->op.arg;
             if (oparg & 1) {
@@ -938,7 +938,7 @@ _Py_Specialize_LoadAttr(PyObject *owner, _Py_CODEUNIT *instr, PyObject *name)
             }
             goto fail;
         }
-        case PROPERTY:
+        case PROPERTY: // 属性
         {
             _PyLoadMethodCache *lm_cache = (_PyLoadMethodCache *)(instr + 1);
             assert(Py_TYPE(descr) == &PyProperty_Type);
@@ -1531,8 +1531,8 @@ _Py_Specialize_BinarySubscr(
     assert(_PyOpcode_Caches[BINARY_SUBSCR] ==
            INLINE_CACHE_ENTRIES_BINARY_SUBSCR);
     _PyBinarySubscrCache *cache = (_PyBinarySubscrCache *)(instr + 1);
-    PyTypeObject *container_type = Py_TYPE(container);
-    if (container_type == &PyList_Type) {
+    PyTypeObject *container_type = Py_TYPE(container); // conrainer type
+    if (container_type == &PyList_Type) { // list
         if (PyLong_CheckExact(sub)) {
             if (_PyLong_IsNonNegativeCompact((PyLongObject *)sub)) {
                 instr->op.code = BINARY_SUBSCR_LIST_INT;
@@ -1545,7 +1545,7 @@ _Py_Specialize_BinarySubscr(
             PySlice_Check(sub) ? SPEC_FAIL_SUBSCR_LIST_SLICE : SPEC_FAIL_OTHER);
         goto fail;
     }
-    if (container_type == &PyTuple_Type) {
+    if (container_type == &PyTuple_Type) { // tuple
         if (PyLong_CheckExact(sub)) {
             if (_PyLong_IsNonNegativeCompact((PyLongObject *)sub)) {
                 instr->op.code = BINARY_SUBSCR_TUPLE_INT;
@@ -1558,7 +1558,7 @@ _Py_Specialize_BinarySubscr(
             PySlice_Check(sub) ? SPEC_FAIL_SUBSCR_TUPLE_SLICE : SPEC_FAIL_OTHER);
         goto fail;
     }
-    if (container_type == &PyUnicode_Type) {
+    if (container_type == &PyUnicode_Type) { // string
         if (PyLong_CheckExact(sub)) {
             if (_PyLong_IsNonNegativeCompact((PyLongObject *)sub)) {
                 instr->op.code = BINARY_SUBSCR_STR_INT;
@@ -1571,13 +1571,13 @@ _Py_Specialize_BinarySubscr(
             PySlice_Check(sub) ? SPEC_FAIL_SUBSCR_STRING_SLICE : SPEC_FAIL_OTHER);
         goto fail;
     }
-    if (container_type == &PyDict_Type) {
+    if (container_type == &PyDict_Type) { // dict
         instr->op.code = BINARY_SUBSCR_DICT;
         goto success;
     }
-    PyTypeObject *cls = Py_TYPE(container);
+    PyTypeObject *cls = Py_TYPE(container); // 到此说明是container类型是object，此时的索引实际上调用的是__getitem__(idx)
     PyObject *descriptor = _PyType_Lookup(cls, &_Py_ID(__getitem__));
-    if (descriptor && Py_TYPE(descriptor) == &PyFunction_Type) {
+    if (descriptor && Py_TYPE(descriptor) == &PyFunction_Type) { // 索引是函数
         if (!(container_type->tp_flags & Py_TPFLAGS_HEAPTYPE)) {
             SPECIALIZATION_FAIL(BINARY_SUBSCR, SPEC_FAIL_SUBSCR_NOT_HEAP_TYPE);
             goto fail;
@@ -1615,7 +1615,7 @@ _Py_Specialize_BinarySubscr(
 fail:
     STAT_INC(BINARY_SUBSCR, failure);
     assert(!PyErr_Occurred());
-    instr->op.code = BINARY_SUBSCR;
+    instr->op.code = BINARY_SUBSCR; // 特化失败
     cache->counter = adaptive_counter_backoff(cache->counter);
     return;
 success:
@@ -1764,13 +1764,13 @@ get_init_for_simple_managed_python_class(PyTypeObject *tp)
 }
 
 static int
-specialize_class_call(PyObject *callable, _Py_CODEUNIT *instr, int nargs)
+specialize_class_call(PyObject *callable, _Py_CODEUNIT *instr, int nargs) // 特化class调用
 {
     assert(PyType_Check(callable));
     PyTypeObject *tp = _PyType_CAST(callable);
-    if (tp->tp_flags & Py_TPFLAGS_IMMUTABLETYPE) {
+    if (tp->tp_flags & Py_TPFLAGS_IMMUTABLETYPE) { // 不可变类型，如str、tuple
         int oparg = instr->op.arg;
-        if (nargs == 1 && oparg == 1) {
+        if (nargs == 1 && oparg == 1) {// 如果参数只有1个，则可以特化
             if (tp == &PyUnicode_Type) {
                 instr->op.code = CALL_STR_1;
                 return 0;
@@ -1784,7 +1784,7 @@ specialize_class_call(PyObject *callable, _Py_CODEUNIT *instr, int nargs)
                 return 0;
             }
         }
-        if (tp->tp_vectorcall != NULL) {
+        if (tp->tp_vectorcall != NULL) { // 内置类？
             instr->op.code = CALL_BUILTIN_CLASS;
             return 0;
         }
@@ -1792,11 +1792,11 @@ specialize_class_call(PyObject *callable, _Py_CODEUNIT *instr, int nargs)
             SPEC_FAIL_CALL_STR : SPEC_FAIL_CALL_CLASS_NO_VECTORCALL);
         return -1;
     }
-    if (Py_TYPE(tp) != &PyType_Type) {
+    if (Py_TYPE(tp) != &PyType_Type) { // 普通类的调用
         goto generic;
     }
-    if (tp->tp_new == PyBaseObject_Type.tp_new) {
-        PyFunctionObject *init = get_init_for_simple_managed_python_class(tp);
+    if (tp->tp_new == PyBaseObject_Type.tp_new) { // 普通的Python类（没有自定义__new__方法），构造函数是PyBaseObject_Type.tp_new
+        PyFunctionObject *init = get_init_for_simple_managed_python_class(tp); // 获取其对应的初始化方法
         if (type_get_version(tp, CALL) == 0) {
             return -1;
         }
@@ -1807,7 +1807,7 @@ specialize_class_call(PyObject *callable, _Py_CODEUNIT *instr, int nargs)
             }
             _PyCallCache *cache = (_PyCallCache *)(instr + 1);
             write_u32(cache->func_version, tp->tp_version_tag);
-            _Py_SET_OPCODE(*instr, CALL_ALLOC_AND_ENTER_INIT);
+            _Py_SET_OPCODE(*instr, CALL_ALLOC_AND_ENTER_INIT); // 特化为CALL_ALLOC_AND_ENTER_INIT，进入到__init__方法
             return 0;
         }
     }
@@ -1823,15 +1823,15 @@ specialize_method_descriptor(PyMethodDescrObject *descr, _Py_CODEUNIT *instr,
     switch (descr->d_method->ml_flags &
         (METH_VARARGS | METH_FASTCALL | METH_NOARGS | METH_O |
         METH_KEYWORDS | METH_METHOD)) {
-        case METH_NOARGS: {
-            if (nargs != 1) {
+        case METH_NOARGS: { // 无参数方法
+            if (nargs != 1) { // 只有self
                 SPECIALIZATION_FAIL(CALL, SPEC_FAIL_WRONG_NUMBER_ARGUMENTS);
                 return -1;
             }
-            instr->op.code = CALL_METHOD_DESCRIPTOR_NOARGS;
+            instr->op.code = CALL_METHOD_DESCRIPTOR_NOARGS; // 特化为无参数方法描述符的调用
             return 0;
         }
-        case METH_O: {
+        case METH_O: { // 单参数方法
             if (nargs != 2) {
                 SPECIALIZATION_FAIL(CALL, SPEC_FAIL_WRONG_NUMBER_ARGUMENTS);
                 return -1;
@@ -1842,43 +1842,43 @@ specialize_method_descriptor(PyMethodDescrObject *descr, _Py_CODEUNIT *instr,
             bool pop = (next.op.code == POP_TOP);
             int oparg = instr->op.arg;
             if ((PyObject *)descr == list_append && oparg == 1 && pop) {
-                instr->op.code = CALL_LIST_APPEND;
+                instr->op.code = CALL_LIST_APPEND; // 如果方法是 list.append，并且符合优化条件（oparg == 1，并且下一条指令是 POP_TOP），则将指令优化为 CALL_LIST_APPEND，这是一个内建优化方法的特化
                 return 0;
             }
-            instr->op.code = CALL_METHOD_DESCRIPTOR_O;
+            instr->op.code = CALL_METHOD_DESCRIPTOR_O; // 如果不是 list.append，则将指令设置为 CALL_METHOD_DESCRIPTOR_O，表示为单个参数的方法调用特化
             return 0;
         }
-        case METH_FASTCALL: {
+        case METH_FASTCALL: { // 快速调用方法，通常是c函数或内建函数
             instr->op.code = CALL_METHOD_DESCRIPTOR_FAST;
             return 0;
         }
-        case METH_FASTCALL | METH_KEYWORDS: {
+        case METH_FASTCALL | METH_KEYWORDS: { // 快速调用带关键字参数
             instr->op.code = CALL_METHOD_DESCRIPTOR_FAST_WITH_KEYWORDS;
             return 0;
         }
     }
-    instr->op.code = CALL_NON_PY_GENERAL;
+    instr->op.code = CALL_NON_PY_GENERAL; // 通用调用
     return 0;
 }
 
 static int
 specialize_py_call(PyFunctionObject *func, _Py_CODEUNIT *instr, int nargs,
-                   bool bound_method)
+                   bool bound_method) // python函数对象，若bound_method=true，表示绑定方法，否则为普通函数
 {
     _PyCallCache *cache = (_PyCallCache *)(instr + 1);
-    PyCodeObject *code = (PyCodeObject *)func->func_code;
-    int kind = function_kind(code);
+    PyCodeObject *code = (PyCodeObject *)func->func_code; // 获取对应的字节码对象
+    int kind = function_kind(code); // 获取字节码的类型
     /* Don't specialize if PEP 523 is active */
     if (_PyInterpreterState_GET()->eval_frame) {
         SPECIALIZATION_FAIL(CALL, SPEC_FAIL_CALL_PEP_523);
         return -1;
     }
     int argcount = -1;
-    if (kind == SPEC_FAIL_CODE_NOT_OPTIMIZED) {
+    if (kind == SPEC_FAIL_CODE_NOT_OPTIMIZED) { // 未优化
         SPECIALIZATION_FAIL(CALL, SPEC_FAIL_CODE_NOT_OPTIMIZED);
         return -1;
     }
-    if (kind == SIMPLE_FUNCTION) {
+    if (kind == SIMPLE_FUNCTION) { // 如果函数类型是简单函数（例如没有复杂装饰器的函数），则从字节码对象中获取函数的参数个数（co_argcount）。这个值决定了函数期望接收的参数数量。
         argcount = code->co_argcount;
     }
     int version = _PyFunction_GetVersionForCurrentState(func);
@@ -1887,17 +1887,18 @@ specialize_py_call(PyFunctionObject *func, _Py_CODEUNIT *instr, int nargs,
         return -1;
     }
     write_u32(cache->func_version, version);
-    if (argcount == nargs + bound_method) {
-        instr->op.code = bound_method ? CALL_BOUND_METHOD_EXACT_ARGS : CALL_PY_EXACT_ARGS;
+    // 根据参数个数具体特化
+    if (argcount == nargs + bound_method) { // 数量匹配
+        instr->op.code = bound_method ? CALL_BOUND_METHOD_EXACT_ARGS : CALL_PY_EXACT_ARGS; // 函数（方法）精确调用
     }
     else {
-        instr->op.code = bound_method ? CALL_BOUND_METHOD_GENERAL : CALL_PY_GENERAL;
+        instr->op.code = bound_method ? CALL_BOUND_METHOD_GENERAL : CALL_PY_GENERAL; // 函数（方法）通用调用
     }
     return 0;
 }
 
 static int
-specialize_c_call(PyObject *callable, _Py_CODEUNIT *instr, int nargs)
+specialize_c_call(PyObject *callable, _Py_CODEUNIT *instr, int nargs) // 特化c函数调用
 {
     if (PyCFunction_GET_FUNCTION(callable) == NULL) {
         SPECIALIZATION_FAIL(CALL, SPEC_FAIL_OTHER);
@@ -1906,7 +1907,7 @@ specialize_c_call(PyObject *callable, _Py_CODEUNIT *instr, int nargs)
     switch (PyCFunction_GET_FLAGS(callable) &
         (METH_VARARGS | METH_FASTCALL | METH_NOARGS | METH_O |
         METH_KEYWORDS | METH_METHOD)) {
-        case METH_O: {
+        case METH_O: { // 接受单个参数
             if (nargs != 1) {
                 SPECIALIZATION_FAIL(CALL, SPEC_FAIL_WRONG_NUMBER_ARGUMENTS);
                 return 1;
@@ -1920,7 +1921,7 @@ specialize_c_call(PyObject *callable, _Py_CODEUNIT *instr, int nargs)
             instr->op.code = CALL_BUILTIN_O;
             return 0;
         }
-        case METH_FASTCALL: {
+        case METH_FASTCALL: { // 快速调用约定
             if (nargs == 2) {
                 /* isinstance(o1, o2) */
                 PyInterpreterState *interp = _PyInterpreterState_GET();
@@ -1932,12 +1933,12 @@ specialize_c_call(PyObject *callable, _Py_CODEUNIT *instr, int nargs)
             instr->op.code = CALL_BUILTIN_FAST;
             return 0;
         }
-        case METH_FASTCALL | METH_KEYWORDS: {
+        case METH_FASTCALL | METH_KEYWORDS: { // 快速调用且关键字参数
             instr->op.code = CALL_BUILTIN_FAST_WITH_KEYWORDS;
             return 0;
         }
         default:
-            instr->op.code = CALL_NON_PY_GENERAL;
+            instr->op.code = CALL_NON_PY_GENERAL; // 通用的c函数调用
             return 0;
     }
 }
@@ -1950,29 +1951,29 @@ _Py_Specialize_Call(PyObject *callable, _Py_CODEUNIT *instr, int nargs)
     assert(_Py_OPCODE(*instr) != INSTRUMENTED_CALL);
     _PyCallCache *cache = (_PyCallCache *)(instr + 1);
     int fail;
-    if (PyCFunction_CheckExact(callable)) {
+    if (PyCFunction_CheckExact(callable)) { // c function
         fail = specialize_c_call(callable, instr, nargs);
     }
-    else if (PyFunction_Check(callable)) {
+    else if (PyFunction_Check(callable)) { // python function
         fail = specialize_py_call((PyFunctionObject *)callable, instr, nargs, false);
     }
-    else if (PyType_Check(callable)) {
+    else if (PyType_Check(callable)) { // class
         fail = specialize_class_call(callable, instr, nargs);
     }
-    else if (Py_IS_TYPE(callable, &PyMethodDescr_Type)) {
+    else if (Py_IS_TYPE(callable, &PyMethodDescr_Type)) { // 方法描述符对象
         fail = specialize_method_descriptor((PyMethodDescrObject *)callable, instr, nargs);
     }
-    else if (PyMethod_Check(callable)) {
-        PyObject *func = ((PyMethodObject *)callable)->im_func;
+    else if (PyMethod_Check(callable)) { // method
+        PyObject *func = ((PyMethodObject *)callable)->im_func; // 获得该绑定的方法所对应的函数
         if (PyFunction_Check(func)) {
-            fail = specialize_py_call((PyFunctionObject *)func, instr, nargs, true);
+            fail = specialize_py_call((PyFunctionObject *)func, instr, nargs, true); // python function
         }
         else {
             SPECIALIZATION_FAIL(CALL, SPEC_FAIL_CALL_BOUND_METHOD);
             fail = -1;
         }
     }
-    else {
+    else { // 其他情况，通用调用指令
         instr->op.code = CALL_NON_PY_GENERAL;
         fail = 0;
     }
@@ -2061,7 +2062,7 @@ binary_op_fail_kind(int oparg, PyObject *lhs, PyObject *rhs)
 
 void
 _Py_Specialize_BinaryOp(PyObject *lhs, PyObject *rhs, _Py_CODEUNIT *instr,
-                        int oparg, PyObject **locals)
+                        int oparg, PyObject **locals) // BinaryOp的特化
 {
     assert(ENABLE_SPECIALIZATION);
     assert(_PyOpcode_Caches[BINARY_OP] == INLINE_CACHE_ENTRIES_BINARY_OP);
@@ -2122,7 +2123,7 @@ _Py_Specialize_BinaryOp(PyObject *lhs, PyObject *rhs, _Py_CODEUNIT *instr,
     }
     SPECIALIZATION_FAIL(BINARY_OP, binary_op_fail_kind(oparg, lhs, rhs));
     STAT_INC(BINARY_OP, failure);
-    instr->op.code = BINARY_OP;
+    instr->op.code = BINARY_OP; // 特化失败
     cache->counter = adaptive_counter_backoff(cache->counter);
     return;
 success:
@@ -2236,7 +2237,7 @@ _Py_Specialize_UnpackSequence(PyObject *seq, _Py_CODEUNIT *instr, int oparg)
     assert(_PyOpcode_Caches[UNPACK_SEQUENCE] ==
            INLINE_CACHE_ENTRIES_UNPACK_SEQUENCE);
     _PyUnpackSequenceCache *cache = (_PyUnpackSequenceCache *)(instr + 1);
-    if (PyTuple_CheckExact(seq)) {
+    if (PyTuple_CheckExact(seq)) { // tuple的解包
         if (PyTuple_GET_SIZE(seq) != oparg) {
             SPECIALIZATION_FAIL(UNPACK_SEQUENCE, SPEC_FAIL_EXPECTED_ERROR);
             goto failure;
@@ -2248,7 +2249,7 @@ _Py_Specialize_UnpackSequence(PyObject *seq, _Py_CODEUNIT *instr, int oparg)
         instr->op.code = UNPACK_SEQUENCE_TUPLE;
         goto success;
     }
-    if (PyList_CheckExact(seq)) {
+    if (PyList_CheckExact(seq)) { // list的解包
         if (PyList_GET_SIZE(seq) != oparg) {
             SPECIALIZATION_FAIL(UNPACK_SEQUENCE, SPEC_FAIL_EXPECTED_ERROR);
             goto failure;
@@ -2341,25 +2342,25 @@ int
 #endif   // Py_STATS
 
 void
-_Py_Specialize_ForIter(PyObject *iter, _Py_CODEUNIT *instr, int oparg)
+_Py_Specialize_ForIter(PyObject *iter, _Py_CODEUNIT *instr, int oparg) // 根据iter的类型对迭代过程进行优化
 {
     assert(ENABLE_SPECIALIZATION);
     assert(_PyOpcode_Caches[FOR_ITER] == INLINE_CACHE_ENTRIES_FOR_ITER);
-    _PyForIterCache *cache = (_PyForIterCache *)(instr + 1);
-    PyTypeObject *tp = Py_TYPE(iter);
-    if (tp == &PyListIter_Type) {
+    _PyForIterCache *cache = (_PyForIterCache *)(instr + 1); // ?
+    PyTypeObject *tp = Py_TYPE(iter); // 获取迭代对象iter的类型
+    if (tp == &PyListIter_Type) { // 列表迭代器
         instr->op.code = FOR_ITER_LIST;
         goto success;
     }
-    else if (tp == &PyTupleIter_Type) {
+    else if (tp == &PyTupleIter_Type) { // 元组迭代器
         instr->op.code = FOR_ITER_TUPLE;
         goto success;
     }
-    else if (tp == &PyRangeIter_Type) {
+    else if (tp == &PyRangeIter_Type) { // 循环迭代器
         instr->op.code = FOR_ITER_RANGE;
         goto success;
     }
-    else if (tp == &PyGen_Type && oparg <= SHRT_MAX) {
+    else if (tp == &PyGen_Type && oparg <= SHRT_MAX) { // 生成器
         assert(instr[oparg + INLINE_CACHE_ENTRIES_FOR_ITER + 1].op.code == END_FOR  ||
             instr[oparg + INLINE_CACHE_ENTRIES_FOR_ITER + 1].op.code == INSTRUMENTED_END_FOR
         );
@@ -2371,7 +2372,7 @@ _Py_Specialize_ForIter(PyObject *iter, _Py_CODEUNIT *instr, int oparg)
         goto success;
     }
     SPECIALIZATION_FAIL(FOR_ITER,
-                        _PySpecialization_ClassifyIterator(iter));
+                        _PySpecialization_ClassifyIterator(iter)); // 迭代器对象不匹配
 failure:
     STAT_INC(FOR_ITER, failure);
     instr->op.code = FOR_ITER;
@@ -2410,7 +2411,7 @@ success:
 }
 
 void
-_Py_Specialize_ToBool(PyObject *value, _Py_CODEUNIT *instr)
+_Py_Specialize_ToBool(PyObject *value, _Py_CODEUNIT *instr) // TO_BOOL的特化
 {
     assert(ENABLE_SPECIALIZATION);
     assert(_PyOpcode_Caches[TO_BOOL] == INLINE_CACHE_ENTRIES_TO_BOOL);

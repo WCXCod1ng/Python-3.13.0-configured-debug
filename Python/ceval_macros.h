@@ -129,6 +129,7 @@ do { \
         CALL_STAT_INC(inlined_py_calls);                \
         goto start_frame;                               \
     } while (0)
+// 将new_frame加入到栈中，并且设置当前执行栈帧为new_frame
 
 // Use this instead of 'goto error' so Tier 2 can go to a different label
 #define GOTO_ERROR(LABEL) goto LABEL
@@ -307,6 +308,7 @@ GETITEM(PyObject *v, Py_ssize_t i) {
  * which is always an integral type. */
 #define ADAPTIVE_COUNTER_TRIGGERS(COUNTER) \
     backoff_counter_triggers(forge_backoff_counter((COUNTER)))
+// 效果类似于普通的backoff_counter_triggers(_Py_BackoffCounter)，只不过此时输入是uint16_t类型
 
 #ifdef Py_GIL_DISABLED
 #define ADVANCE_ADAPTIVE_COUNTER(COUNTER) \
